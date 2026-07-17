@@ -12,7 +12,7 @@ import synapseclient
 DESTINATION = Path(__file__).resolve().parents[2] / "data" / "coda-tb"
 SOLICITED_FOLDER_ID = "syn40358494"
 SOLICITED_METADATA_ID = "syn41604939"
-DOWNLOAD_WORKERS = 1000
+DOWNLOAD_WORKERS = 1
 MAX_RETRIES = 3
 LOCAL_METADATA_FILES = (
     "CODA_TB_Clinical_Meta_Info.csv",
