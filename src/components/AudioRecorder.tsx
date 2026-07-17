@@ -113,20 +113,26 @@ export function AudioRecorder() {
     if (!activeBlob || !sex) return;
 
     setVisualizationError(null);
-    let audioDetail;
+    let visualization;
     try {
-      const visualization = await extractAudioVisualization(activeBlob);
-      audioDetail = {
-        ...visualization,
-        spectrogramSource: "audio" as const,
-      };
+      visualization = await extractAudioVisualization(activeBlob);
     } catch (error) {
       setVisualizationError(
         error instanceof Error ? error.message : "Spektrogram audio gagal dibuat.",
       );
+      return;
     }
 
-    const data = await analyze(activeBlob, sex, activeName, audioDetail);
+    const data = await analyze(
+      visualization.uploadBlob,
+      sex,
+      activeName.replace(/\.[^.]+$/, "") + ".wav",
+      {
+        spectrogram: visualization.spectrogram,
+        spectrogramSource: "audio",
+        features: visualization.features,
+      },
+    );
     if (data?.risk === "high") flow.openPrompt();
     else if (data) flow.showDetail();
   };

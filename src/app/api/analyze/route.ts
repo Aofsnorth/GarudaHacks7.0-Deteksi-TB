@@ -117,9 +117,15 @@ export async function POST(request: NextRequest) {
       });
 
       if (!backendResponse.ok) {
-        const detail = await backendResponse.text().catch(() => "Unknown");
+        const backendError = await backendResponse
+          .json()
+          .catch(() => ({ detail: "Kesalahan backend tidak diketahui." }));
+        const detail =
+          typeof backendError.detail === "string"
+            ? backendError.detail
+            : "Audio ditolak oleh backend.";
         return NextResponse.json(
-          { error: "Backend gagal memproses audio.", detail },
+          { error: `Backend gagal memproses audio: ${detail}` },
           { status: backendResponse.status },
         );
       }
