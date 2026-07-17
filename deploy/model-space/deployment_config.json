@@ -113,8 +113,8 @@
   },
   "thresholds": {
     "screening": 0.2596,
-    "balanced": 0.4084,
-    "default": 0.5,
+    "balanced": 0.3896287977695465,
+    "default": 0.3896287977695465,
     "max_accuracy": 0.6803
   },
   "disclaimer": "This tool provides preliminary TB risk screening only and is not a diagnosis. Seek professional assessment and microbiological testing."

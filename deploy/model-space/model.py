@@ -32,15 +32,15 @@ class PretrainedFeatureExtractor(nn.Module):
         super().__init__()
         # weights=None prevents a network download during deployment. The
         # trained state dict replaces every retained weight immediately.
-        backbone = resnet18(weights=None)
+        self.resnet = resnet18(weights=None)
         self.features = nn.Sequential(
-            backbone.conv1,
-            backbone.bn1,
-            backbone.relu,
-            backbone.maxpool,
-            backbone.layer1,
-            backbone.layer2,
-            backbone.layer3,
+            self.resnet.conv1,
+            self.resnet.bn1,
+            self.resnet.relu,
+            self.resnet.maxpool,
+            self.resnet.layer1,
+            self.resnet.layer2,
+            self.resnet.layer3,
         )
         self.adaptive_pool = nn.AdaptiveAvgPool2d((8, 4))
 
