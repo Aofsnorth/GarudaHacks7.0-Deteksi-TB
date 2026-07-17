@@ -1,61 +1,105 @@
+import json
 import os
+from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+import torch
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="Deteksi TB - Model API")
-
-# TODO: load your trained CNN once at startup, for example:
-# import tensorflow as tf
-# MODEL = tf.keras.models.load_model(os.path.join(os.path.dirname(__file__), "model.h5"))
-
-RISK_MESSAGE = {
-    "low": "Model tidak menemukan pola menonjol pada sampel ini.",
-    "medium": "Terdapat pola yang perlu ditinjau lebih lanjut.",
-    "high": "Model menandai pola berisiko tinggi. Perlu konfirmasi klinis.",
-}
-
-RISK_RECOMMENDATION = {
-    "low": "Pantau gejala; konsultasikan ke tenaga medis bila berlanjut.",
-    "medium": "Disarankan pemeriksaan lanjutan di fasilitas kesehatan.",
-    "high": "Segera lakukan pemeriksaan konfirmasi (dahak/rontgen) di fasilitas kesehatan.",
-}
+from model import load_model, predict_tb_risk
+from preprocessing import (
+    PreprocessingError,
+    classify_risk,
+    load_deployment_config,
+    prepare_model_inputs,
+)
 
 
-@app.get("/")
+BASE_DIR = Path(__file__).resolve().parent
+CONFIG = load_deployment_config(BASE_DIR / "deployment_config.json")
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+MODEL = load_model(BASE_DIR / CONFIG["model"]["weights_file"], DEVICE)
+
+app = FastAPI(title="SuaraNafas TB Screening API", version="1.0.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        origin.strip()
+        for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+        if origin.strip()
+    ],
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/health")
 def health():
-    return {"status": "ok", "service": "deteksi-tb-model-api"}
+    return {
+        "status": "ok",
+        "device": DEVICE,
+        "model": "SuaraNafas multimodal TB screening",
+    }
+
+
+@app.get("/config/public")
+def public_config():
+    return {
+        "countries": CONFIG["countries"],
+        "hiv_statuses": CONFIG["hiv_statuses"],
+        "recommended_clips": CONFIG["audio"]["recommended_clips"],
+        "maximum_clips": CONFIG["audio"]["maximum_clips"],
+        "thresholds": CONFIG["thresholds"],
+        "disclaimer": CONFIG["disclaimer"],
+    }
 
 
 @app.post("/predict")
-async def predict(audio: UploadFile = File(...)):
-    data = await audio.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="File audio kosong.")
+async def predict(
+    metadata: str = Form(...),
+    audio: list[UploadFile] = File(...),
+):
+    if len(audio) > int(CONFIG["audio"]["maximum_clips"]):
+        raise HTTPException(status_code=422, detail="Too many audio clips")
 
-    # === TODO: replace with real inference ===
-    # 1) decode audio (e.g. librosa) -> mel-spectrogram
-    # 2) probs = MODEL.predict(spectrogram) -> per-class probabilities
-    # The block below is a deterministic placeholder so the endpoint is testable
-    # end-to-end before the real model is attached.
-    score = (len(data) % 100) / 100.0
-    risk = "high" if score >= 0.66 else "medium" if score >= 0.33 else "low"
-    confidence = round(0.6 + score * 0.39, 2)
-    # =========================================
+    try:
+        clinical_payload = json.loads(metadata)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=422, detail="metadata must be valid JSON") from exc
+
+    audio_bytes = []
+    for upload in audio:
+        if upload.content_type and not (
+            upload.content_type.startswith("audio/")
+            or upload.content_type == "application/octet-stream"
+        ):
+            raise HTTPException(
+                status_code=415,
+                detail=f"Unsupported file type: {upload.content_type}",
+            )
+        audio_bytes.append(await upload.read())
+
+    try:
+        prepared = prepare_model_inputs(audio_bytes, clinical_payload, CONFIG)
+        probability = predict_tb_risk(
+            MODEL,
+            prepared.patient_specs,
+            prepared.metadata,
+        )
+    except PreprocessingError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     return {
-        "risk": risk,
-        "confidence": confidence,
-        "message": RISK_MESSAGE[risk],
-        "recommendation": RISK_RECOMMENDATION[risk],
-        "detail": {
-            "scores": [
-                {"label": "TB", "value": round(score, 2)},
-                {"label": "Non-TB", "value": round(1 - score, 2)},
-            ],
-            "features": [
-                {"label": "Ukuran sampel", "value": f"{len(data)} bytes"},
-                {"label": "Tipe berkas", "value": audio.content_type or "unknown"},
-            ],
-            "model": {"name": "cnn-tb", "version": "0.1.0", "durationMs": 0},
-        },
+        "tb_risk_probability": probability,
+        "tb_risk_percent": round(probability * 100, 2),
+        "risk_band": classify_risk(probability, CONFIG),
+        "accepted_clips": prepared.accepted_clips,
+        "thresholds": CONFIG["thresholds"],
+        "disclaimer": CONFIG["disclaimer"],
+        "limitations": [
+            "This is screening, not microbiological confirmation.",
+            "The model was validated on CODA-TB data.",
+            "Clinical metadata contributes strongly to the prediction.",
+        ],
     }

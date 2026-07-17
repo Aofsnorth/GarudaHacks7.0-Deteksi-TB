@@ -9,7 +9,6 @@
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
-
 # testing
 /coverage
 
@@ -73,3 +72,19 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# agent-only workspace files
+/.hallmark/
+/.agents/
+/.superpowers/
+/docs/superpowers/
+/logs/
+AGENTS.md
+IDEA.md
+design.md
+
+# original model handoff workspace; deployment copy lives in deploy/model-space
+/integrate-models/
+
+# deployment needs the copied PyTorch weights despite the global *.pt rule
+!/deploy/model-space/*.pt
