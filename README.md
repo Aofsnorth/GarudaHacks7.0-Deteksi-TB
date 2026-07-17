@@ -1,4 +1,4 @@
-# Deteksi TB - GarudaHacks 7.0
+# SuaraNafaas - GarudaHacks 7.0
 
 Web app untuk deteksi dini tuberkulosis (TB) melalui analisis rekaman suara batuk.
 
